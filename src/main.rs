@@ -40,14 +40,21 @@ async fn commit_with_review(mut message: String, repo_path: &str) -> Result<()> 
                 return Ok(());
             }
             "✏️  修改" => {
-                let editor = resolve_editor();
+                let (editor, _) = run_git_command(repo_path, ["var", "GIT_EDITOR"]).await?;
+                let mut editor_parts = editor.split_whitespace();
+                let editor_bin = editor_parts.next().unwrap_or("vi");
+                let editor_args: Vec<&str> = editor_parts.collect();
                 let tmp_path = {
                     let mut f = NamedTempFile::new()?;
                     write!(f, "{}", message)?;
                     f.flush()?;
                     f.into_temp_path()
                 };
-                let exit = Command::new(&editor).arg(&tmp_path).status().await?;
+                let exit = Command::new(editor_bin)
+                    .args(&editor_args)
+                    .arg(&tmp_path)
+                    .status()
+                    .await?;
                 if exit.success() {
                     let candidate = std::fs::read_to_string(&tmp_path)?.trim().to_string();
                     if candidate.is_empty() {
@@ -64,16 +71,6 @@ async fn commit_with_review(mut message: String, repo_path: &str) -> Result<()> 
 
 fn resolve_env(names: &Vec<&str>) -> Option<String> {
     names.iter().find_map(|key| std::env::var(key).ok())
-}
-
-fn resolve_editor() -> String {
-    resolve_env(&vec!["GIT_EDITOR", "VISUAL", "EDITOR"]).unwrap_or_else(|| {
-        if cfg!(windows) {
-            "notepad".to_string()
-        } else {
-            "nano".to_string()
-        }
-    })
 }
 
 #[derive(Parser, Debug)]
