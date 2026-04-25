@@ -45,16 +45,18 @@ struct DiffContext {
     staged_diff_detail: String,
     branch: String,
     recent_commits: String,
+    json_output: bool,
 }
 
 impl DiffContext {
-    async fn new(repo_path: &str) -> Result<DiffContext> {
+    async fn new(repo_path: &str, json_output: bool) -> Result<DiffContext> {
         Ok(Self {
             project_name: get_repo_name(repo_path).await?,
             staged_diff: get_staged_diff(repo_path, Some(false)).await?,
             staged_diff_detail: get_staged_diff(repo_path, Some(true)).await?,
             branch: get_current_branch(repo_path).await?,
             recent_commits: get_recent_commits(repo_path, None).await?,
+            json_output,
         })
     }
 }
@@ -95,7 +97,7 @@ async fn main() -> Result<()> {
         panic!("❌ api key 不能为空，请通过命令行参数或环境变量提供有效的 api key");
     }
 
-    let context = DiffContext::new(&repo_path).await?;
+    let context = DiffContext::new(&repo_path, args.json).await?;
 
     if is_verbose {
         println!("📊 获取到的上下文信息:\n{:#?}", context);
