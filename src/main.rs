@@ -1,13 +1,79 @@
-use std::{ffi::OsStr, path::Path, process::ExitStatus};
+use std::{ffi::OsStr, io::Write, path::Path, process::ExitStatus};
 
 use anyhow::{Ok, Result};
 use askama::Template;
 use clap::Parser;
+use inquire::Select;
 use rig::{client::CompletionClient, completion::Prompt, providers::anthropic};
+use tempfile::NamedTempFile;
 use tokio::process::Command;
+
+async fn commit_with_review(mut message: String, repo_path: &str) -> Result<()> {
+    loop {
+        println!("\n{}\n{}\n{}", "─".repeat(60), message, "─".repeat(60));
+
+        let choice =
+            Select::new("请选择操作:", vec!["✅ 接受并提交", "❌ 拒绝", "✏️  修改"]).prompt()?;
+
+        match choice {
+            "✅ 接受并提交" => {
+                let tmp_path = {
+                    let mut f = NamedTempFile::new()?;
+                    write!(f, "{}", message)?;
+                    f.flush()?;
+                    f.into_temp_path()
+                };
+                let status = Command::new("git")
+                    .current_dir(repo_path)
+                    .arg("commit")
+                    .arg("-F")
+                    .arg(&tmp_path)
+                    .status()
+                    .await?;
+                if !status.success() {
+                    anyhow::bail!("git commit 失败");
+                }
+                return Ok(());
+            }
+            "❌ 拒绝" => {
+                println!("已取消提交");
+                return Ok(());
+            }
+            "✏️  修改" => {
+                let editor = resolve_editor();
+                let tmp_path = {
+                    let mut f = NamedTempFile::new()?;
+                    write!(f, "{}", message)?;
+                    f.flush()?;
+                    f.into_temp_path()
+                };
+                let exit = Command::new(&editor).arg(&tmp_path).status().await?;
+                if exit.success() {
+                    let candidate = std::fs::read_to_string(&tmp_path)?.trim().to_string();
+                    if candidate.is_empty() {
+                        println!("提交信息不能为空，已保留原始内容");
+                    } else {
+                        message = candidate;
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+}
 
 fn resolve_env(names: &Vec<&str>) -> Option<String> {
     names.iter().find_map(|key| std::env::var(key).ok())
+}
+
+fn resolve_editor() -> String {
+    resolve_env(&vec!["GIT_EDITOR", "VISUAL", "EDITOR"]).unwrap_or_else(|| {
+        if cfg!(windows) {
+            "notepad".to_string()
+        } else {
+            "nano".to_string()
+        }
+    })
 }
 
 #[derive(Parser, Debug)]
@@ -35,6 +101,10 @@ struct Args {
     /// 输出 verbose 信息
     #[clap(short, long, action = clap::ArgAction::SetTrue)]
     verbose: bool,
+
+    /// 生成后进入交互式 review 并直接提交
+    #[clap(short = 'c', long, action = clap::ArgAction::SetTrue)]
+    commit: bool,
 }
 
 #[derive(Debug, Template)]
@@ -61,10 +131,14 @@ impl DiffContext {
     }
 }
 
-#[allow(dead_code, unused_variables)]
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    if args.commit && args.json {
+        eprintln!("❌ --commit 与 --json 不能同时使用");
+        std::process::exit(1);
+    }
 
     if args.brand {
         println!("🤖 正在调用 Claude 生成 commit 信息...")
@@ -127,7 +201,11 @@ async fn main() -> Result<()> {
 
     let response = agent.prompt(prompt).await?;
 
-    println!("{}", &response);
+    if args.commit {
+        commit_with_review(response, &repo_path).await?;
+    } else {
+        println!("{}", &response);
+    }
 
     Ok(())
 }
