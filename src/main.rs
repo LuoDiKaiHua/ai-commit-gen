@@ -137,10 +137,6 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    if args.brand {
-        println!("🤖 正在调用 Claude 生成 commit 信息...")
-    }
-
     let is_verbose = args.verbose;
 
     if is_verbose && !args.base_url.is_empty() && !args.api_key.is_empty() {
@@ -196,7 +192,29 @@ async fn main() -> Result<()> {
         )
         .build();
 
+    let spinner_handle = if args.brand {
+        Some(tokio::spawn(async {
+            let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            let mut i = 0usize;
+            loop {
+                print!("\r🤖 正在调用 Claude 生成 commit 信息... {}", frames[i % frames.len()]);
+                let _ = std::io::stdout().flush();
+                i += 1;
+                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            }
+        }))
+    } else {
+        None
+    };
+
     let response = agent.prompt(prompt).await?;
+
+    if let Some(handle) = spinner_handle {
+        handle.abort();
+        let _ = handle.await;
+        print!("\r\x1b[2K");
+        let _ = std::io::stdout().flush();
+    }
 
     if args.commit {
         commit_with_review(response, &repo_path).await?;
