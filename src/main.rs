@@ -91,8 +91,8 @@ struct Args {
     #[clap(short, long, action = clap::ArgAction::SetTrue)]
     json: bool,
 
-    /// 是否输出品牌信息
-    #[clap(long, action = clap::ArgAction::SetTrue)]
+    /// 禁用品牌信息输出（默认开启）
+    #[clap(long = "no-brand", action = clap::ArgAction::SetFalse)]
     brand: bool,
 
     /// 输出 verbose 信息
