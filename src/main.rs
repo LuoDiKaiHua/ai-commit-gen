@@ -14,8 +14,7 @@ async fn main() -> Result<()> {
     let mut args = Args::from_arg_matches(&matches)?;
 
     if matches.value_source("api_key") == Some(clap::parser::ValueSource::DefaultValue) {
-        args.api_key =
-            resolve_env(&vec!["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]).unwrap_or_default();
+        args.api_key = resolve_env(&vec!["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]).unwrap_or_default();
     }
 
     if args.commit && args.json {
@@ -73,9 +72,7 @@ async fn main() -> Result<()> {
 
     let agent = client
         .agent("claude-sonnet-4-6")
-        .preamble(
-            "你是一个 git commit message 生成器，帮助用户根据 git diff 生成规范的 commit message",
-        )
+        .preamble("你是一个 git commit message 生成器，帮助用户根据 git diff 生成规范的 commit message")
         .build();
 
     let spinner_handle = if args.brand {
@@ -115,8 +112,7 @@ async fn commit_with_review(mut message: String, repo_path: &str) -> Result<()> 
     loop {
         println!("\n{}\n{}\n{}", "─".repeat(60), message, "─".repeat(60));
 
-        let choice =
-            Select::new("请选择操作:", vec!["✅ 接受并提交", "❌ 拒绝", "✏️  修改"]).prompt()?;
+        let choice = Select::new("请选择操作:", vec!["✅ 接受并提交", "❌ 拒绝", "✏️  修改"]).prompt()?;
 
         match choice {
             "✅ 接受并提交" => {
@@ -143,7 +139,7 @@ async fn commit_with_review(mut message: String, repo_path: &str) -> Result<()> 
                 return Ok(());
             }
             "✏️  修改" => {
-                let (editor, _) = run_git_command(repo_path, ["var", "GIT_EDITOR"]).await?;
+                let (editor, _) = run_git_command(repo_path, vec!["var", "GIT_EDITOR"]).await?;
                 let mut editor_parts = editor.split_whitespace();
                 let editor_bin = editor_parts.next().unwrap_or("vi");
                 let editor_args: Vec<&str> = editor_parts.collect();
@@ -250,11 +246,7 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let output = Command::new("git")
-        .current_dir(repo_path)
-        .args(args)
-        .output()
-        .await?;
+    let output = Command::new("git").current_dir(repo_path).args(args).output().await?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -266,8 +258,7 @@ where
 }
 
 async fn get_repo_name(repo_path: &str) -> Result<String> {
-    let (output, status) =
-        run_git_command(repo_path, "rev-parse --show-toplevel".split(" ")).await?;
+    let (output, status) = run_git_command(repo_path, vec!["rev-parse", "--show-toplevel"]).await?;
 
     if status.success() {
         let repo_name = Path::new(&output)
@@ -285,9 +276,9 @@ async fn get_staged_diff(repo_path: &str, is_detail: Option<bool>) -> Result<Str
     let take_detail = is_detail.unwrap_or(false);
 
     let args = if take_detail {
-        "diff --cached".split(" ")
+        vec!["diff", "--cached"]
     } else {
-        "diff --cached --stat".split(" ")
+        vec!["diff", "--cached", "--stat"]
     };
 
     let (output, status) = run_git_command(repo_path, args).await?;
@@ -300,7 +291,7 @@ async fn get_staged_diff(repo_path: &str, is_detail: Option<bool>) -> Result<Str
 }
 
 async fn get_current_branch(repo_path: &str) -> Result<String> {
-    let (output, status) = run_git_command(repo_path, "branch --show-current".split(" ")).await?;
+    let (output, status) = run_git_command(repo_path, vec!["branch", "--show-current"]).await?;
 
     if status.success() {
         Ok(output)
@@ -311,10 +302,9 @@ async fn get_current_branch(repo_path: &str) -> Result<String> {
 
 async fn get_recent_commits(repo_path: &str, count: Option<u32>) -> Result<String> {
     let count = count.unwrap_or(10);
+    let count_arg = format!("-{count}");
 
-    let result = run_git_command(repo_path, format!("log --oneline -{}", count).split(" ")).await;
+    let result = run_git_command(repo_path, vec!["log", "--oneline", &count_arg]).await;
 
-    Ok(result
-        .map(|(o, _)| o)
-        .unwrap_or("暂无历史 commit".to_string()))
+    Ok(result.map(|(o, _)| o).unwrap_or("暂无历史 commit".to_string()))
 }
